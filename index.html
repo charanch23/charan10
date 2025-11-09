@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Image Generator</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --max-width: 980px; --accent: #2563eb; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: #f5f7fb;
+      color: #0f1724;
+      margin: 0;
+      padding: 28px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: var(--max-width);
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 8px 36px rgba(15, 23, 36, 0.06);
+    }
+    h1 { margin: 0 0 8px 0; font-size: 22px; }
+    p.lead { margin: 0 0 18px 0; color: #475569; font-size: 14px; }
+    label { font-weight: 600; display:block; margin-bottom: 6px; font-size: 14px; }
+    textarea, select, input[type="number"] {
+      width:100%;
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid #e6e9ef;
+      box-sizing: border-box;
+      font-size: 14px;
+      background: #fbfdff;
+      resize: vertical;
+    }
+    .row { display:flex; gap:12px; margin-top:8px; }
+    .row > div { flex:1; }
+    button.primary {
+      margin-top:12px;
+      padding:10px 16px;
+      border-radius:8px;
+      background:var(--accent);
+      color:white;
+      border:none;
+      cursor:pointer;
+      font-weight:600;
+    }
+    button.secondary {
+      margin-left:8px;
+      margin-top:12px;
+      padding:10px 12px;
+      border-radius:8px;
+      background:#111827;
+      color:white;
+      border:none;
+      cursor:pointer;
+      font-weight:600;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #gallery {
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap:14px;
+      margin-top:18px;
+    }
+    .card {
+      border:1px solid #eef2ff;
+      padding:8px;
+      border-radius:10px;
+      background:#fff;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .card img { width:100%; height:auto; display:block; border-radius:6px; }
+    .card .rowBtns { display:flex; gap:8px; }
+    .small { font-size:13px; color:#667085; }
+    #status { margin-top:8px; color:#0f1724; font-weight:600; }
+    .footer-note { margin-top:14px; font-size:13px; color:#475569; }
+    .controls { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AI Image Generator</h1>
+    <p class="lead">Enter a prompt and click Generate. Images are created by your backend at <code>https://chara-3vz7.onrender.com</code>.</p>
+
+    <form id="promptForm">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" placeholder="A fantasy castle at sunset, ultra realistic, 8k, cinematic lighting..." rows="4"></textarea>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label for="size">Size</label>
+          <select id="size">
+            <option value="512x512">512 x 512</option>
+            <option value="768x768">768 x 768</option>
+            <option value="1024x1024" selected>1024 x 1024</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="count">Count</label>
+          <input id="count" type="number" min="1" max="5" value="1" />
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="generateBtn" class="primary" type="submit">Generate</button>
+        <button id="clearBtn" class="secondary" type="button">Clear Gallery</button>
+        <div id="status" style="margin-left:12px;"></div>
+      </div>
+    </form>
+
+    <div id="gallery" class="gallery"></div>
+
+    <div class="footer-note">
+      Note: Keep an eye on your OpenAI usage/billing. If you see CORS or network errors, ensure the backend is deployed and the backend URL is correct.
+    </div>
+  </div>
+
+  <script>
+    // ---------------------------
+    // CONFIG: set your backend URL
+    // ---------------------------
+    const BACKEND_URL = 'https://chara-3vz7.onrender.com'; // <--- already set for you
+
+    // UI elements
+    const form = document.getElementById('promptForm');
+    const promptEl = document.getElementById('prompt');
+    const sizeEl = document.getElementById('size');
+    const countEl = document.getElementById('count');
+    const generateBtn = document.getElementById('generateBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const gallery = document.getElementById('gallery');
+    const status = document.getElementById('status');
+
+    function setStatus(text, isError = false) {
+      status.textContent = text || '';
+      status.style.color = isError ? '#b91c1c' : '#0f1724';
+    }
+
+    // Add images to gallery (supports data: URIs and remote URLs)
+    function addImagesToGallery(images, size) {
+      images.forEach((url) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = 'AI generated';
+        img.loading = 'lazy';
+        card.appendChild(img);
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'rowBtns';
+
+        const openBtn = document.createElement('button');
+        openBtn.textContent = 'Open';
+        openBtn.onclick = () => window.open(url, '_blank');
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.textContent = 'Download';
+        downloadBtn.onclick = () => downloadImage(url);
+
+        btnRow.appendChild(openBtn);
+        btnRow.appendChild(downloadBtn);
+
+        const info = document.createElement('div');
+        info.className = 'small';
+        info.textContent = `Size: ${size}`;
+
+        card.appendChild(btnRow);
+        card.appendChild(info);
+        gallery.prepend(card);
+      });
+    }
+
+    // Trigger download for both data: URIs and remote URLs
+    function downloadImage(url) {
+      // For remote URLs, use anchor download - browser may not allow cross-origin filename, but will open in new tab for user to save.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ai-image.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    // Call backend to generate images
+    async function generateImages(prompt, size, count) {
+      const payload = { prompt, size, n: count };
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+
+      try {
+        const resp = await fetch(BACKEND_URL + '/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        if (!resp.ok) {
+          // try to parse JSON error
+          let errText = `HTTP ${resp.status}`;
+          try {
+            const j = await resp.json();
+            errText = j.error || JSON.stringify(j);
+          } catch (e) {}
+          throw new Error(errText);
+        }
+        const data = await resp.json();
+        return data;
+      } catch (err) {
+        clearTimeout(timeout);
+        throw err;
+      }
+    }
+
+    // Form submit handler
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const prompt = promptEl.value.trim();
+      if (!prompt) return alert('Please enter a prompt.');
+
+      const size = sizeEl.value;
+      const count = Math.min(Math.max(parseInt(countEl.value || '1', 10), 1), 10);
+
+      generateBtn.disabled = true;
+      setStatus('Generating images...');
+
+      try {
+        const data = await generateImages(prompt, size, count);
+        const images = data?.images || [];
+        if (images.length === 0) {
+          setStatus('No images returned from backend.', true);
+        } else {
+          addImagesToGallery(images, size);
+          setStatus(`Received ${images.length} image(s).`);
+        }
+      } catch (err) {
+        console.error(err);
+        const msg = err?.message || 'Generation failed';
+        setStatus('Error: ' + msg, true);
+        alert('Generate error: ' + msg);
+      } finally {
+        generateBtn.disabled = false;
+        setTimeout(() => setStatus(''), 5000);
+      }
+    });
+
+    // Clear gallery
+    clearBtn.addEventListener('click', () => {
+      if (!confirm('Clear all images from gallery?')) return;
+      gallery.innerHTML = '';
+    });
+
+    // Helpful: allow pressing Ctrl+Enter in textarea to submit
+    promptEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        generateBtn.click();
+      }
+    });
+  </script>
+</body>
+</html>
